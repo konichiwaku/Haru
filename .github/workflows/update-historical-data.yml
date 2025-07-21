@@ -111,5 +111,4 @@ jobs:
           r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
           source-dir: upload_data # Sekarang upload hanya dari folder ini
           destination-dir: /
-          files: historical_summary.json # Parameter ini bisa tetap ada tapi tidak lagi kritis
           output-file-url: true
