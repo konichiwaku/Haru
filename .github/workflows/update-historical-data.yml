@@ -1,0 +1,106 @@
+name: 1. Update Data Historis Koin (ATH/ATL)
+
+on:
+  schedule:
+    # Jalankan setiap 24 jam sekali (pukul 00:00 UTC)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Memungkinkan Anda menjalankan workflow secara manual dari GitHub UI
+
+jobs:
+  fetch-historical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # Timeout maksimal 6 jam
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Siapkan Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instal dependensi
+        run: |
+          npm install axios
+
+      - name: Ambil dan Proses Data Historis
+        run: |
+          const axios = require('axios');
+          const fs = require('fs');
+          const path = require('path');
+
+          const COIN_IDS_FILE = 'acoin.json'; 
+          const OUTPUT_FILE = 'historical_summary.json';
+
+          async function fetchAndProcessHistoricalData() {
+            try {
+              console.log('Membaca ID koin dari:', COIN_IDS_FILE);
+              const coinIds = JSON.parse(fs.readFileSync(COIN_IDS_FILE, 'utf8'));
+              console.log('Ditemukan', coinIds.length, 'koin untuk diproses.');
+
+              const historicalSummaries = {};
+
+              for (const coinId of coinIds) {
+                console.log('Mengambil data historis untuk:', coinId);
+                try {
+                  const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=max`);
+                  const prices = response.data.prices;
+
+                  let ath = 0;
+                  let athDate = '';
+                  let atl = Number.MAX_VALUE;
+                  let atlDate = '';
+
+                  if (prices && prices.length > 0) {
+                    prices.forEach(([timestamp, price]) => {
+                      if (price > ath) {
+                        ath = price;
+                        athDate = new Date(timestamp).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+                      }
+                      if (price < atl) {
+                        atl = price;
+                        atlDate = new Date(timestamp).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+                      }
+                    });
+                  } else {
+                    console.warn('Tidak ada data harga ditemukan untuk', coinId);
+                  }
+
+                  historicalSummaries[coinId] = {
+                    ath: ath,
+                    ath_date: athDate,
+                    atl: atl,
+                    atl_date: atlDate
+                  };
+
+                  await new Promise(resolve => setTimeout(resolve, 1500)); // Jeda 1.5 detik
+
+                } catch (error) {
+                  console.error(`Error saat mengambil data untuk ${coinId}:`, error.message);
+                }
+              }
+
+              fs.writeFileSync(OUTPUT_FILE, JSON.stringify(historicalSummaries, null, 2));
+              console.log('Ringkasan historis disimpan ke', OUTPUT_FILE);
+
+            } catch (error) {
+              console.error('Terjadi error fatal:', error.message);
+              process.exit(1);
+            }
+          }
+
+          fetchAndProcessHistoricalData();
+          "
+
+      - name: Unggah historical_summary.json ke Cloudflare R2
+        uses: ryand56/r2-upload-action@v1.x
+        with:
+          r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
+          source-dir: .
+          destination-dir: /
+          files: historical_summary.json
+          output-file-url: true
