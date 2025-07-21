@@ -26,6 +26,8 @@ jobs:
 
       - name: Ambil dan Proses Data Historis
         run: |
+          # Tulis kode JavaScript ke sebuah file sementara
+          cat << 'EOF' > process_data.js
           const axios = require('axios');
           const fs = require('fs');
           const path = require('path');
@@ -74,7 +76,7 @@ jobs:
                     atl_date: atlDate
                   };
 
-                  await new Promise(resolve => setTimeout(resolve, 1500)); // Jeda 1.5 detik
+                  await new Promise(resolve => setTimeout(resolve, 1500)); // Jeda 1.5 detik (menghindari rate limit CoinGecko)
 
                 } catch (error) {
                   console.error(`Error saat mengambil data untuk ${coinId}:`, error.message);
@@ -91,9 +93,12 @@ jobs:
           }
 
           fetchAndProcessHistoricalData();
+          EOF
+          # Jalankan file JavaScript dengan Node.js
+          node process_data.js
 
       - name: Unggah historical_summary.json ke Cloudflare R2
-        uses: ryand56/r2-upload-action@v1
+        uses: ryand56/r2-upload-action@v1 # Telah dikoreksi menjadi v1
         with:
           r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
           r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
