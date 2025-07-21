@@ -9,7 +9,7 @@ on:
 jobs:
   fetch-historical:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # Timeout maksimal 6 jam
+    timeout-minutes: 360 # Timeout maksimal 6 jam (6 jam = 360 menit)
 
     steps:
       - name: Checkout kode
@@ -32,7 +32,7 @@ jobs:
           const fs = require('fs');
           const path = require('path');
 
-          const COIN_IDS_FILE = 'duit.json'; 
+          const COIN_IDS_FILE = 'duit'; // Menggunakan nama file 'duit' seperti yang Anda konfirmasi
           const OUTPUT_FILE = 'historical_summary.json';
 
           async function fetchAndProcessHistoricalData() {
@@ -97,6 +97,11 @@ jobs:
           # Jalankan file JavaScript dengan Node.js
           node process_data.js
 
+      - name: Siapkan file untuk diunggah
+        run: |
+          mkdir -p upload_data # Buat folder sementara
+          mv historical_summary.json upload_data/ # Pindahkan file ke folder sementara
+
       - name: Unggah historical_summary.json ke Cloudflare R2
         uses: ryand56/r2-upload-action@v1 # Telah dikoreksi menjadi v1
         with:
@@ -104,7 +109,7 @@ jobs:
           r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
           r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
-          source-dir: .
+          source-dir: upload_data # Sekarang upload hanya dari folder ini
           destination-dir: /
-          files: historical_summary.json
+          files: historical_summary.json # Parameter ini bisa tetap ada tapi tidak lagi kritis
           output-file-url: true
