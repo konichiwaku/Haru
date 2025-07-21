@@ -32,7 +32,7 @@ jobs:
           const fs = require('fs');
           const path = require('path');
 
-          const COIN_IDS_FILE = 'acoin.json'; 
+          const COIN_IDS_FILE = 'duit.json'; 
           const OUTPUT_FILE = 'historical_summary.json';
 
           async function fetchAndProcessHistoricalData() {
