@@ -91,7 +91,6 @@ jobs:
           }
 
           fetchAndProcessHistoricalData();
-          "
 
       - name: Unggah historical_summary.json ke Cloudflare R2
         uses: ryand56/r2-upload-action@v1
