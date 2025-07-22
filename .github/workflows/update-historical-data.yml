@@ -40,11 +40,6 @@ jobs:
 
           async function fetchAndProcessHistoricalData() {
             try {
-              // --- BARIS DEBUGGING API KEY (HAPUS SETELAH DIGUNAKAN) ---
-              console.log('Panjang API Key:', COINGECKO_API_KEY ? COINGECKO_API_KEY.length : 'null');
-              console.log('API Key dimulai dengan:', COINGECKO_API_KEY ? COINGECKO_API_KEY.substring(0, 5) + '...' : 'null');
-              // --------------------------------------------------------
-
               console.log('Membaca ID koin dari:', COIN_IDS_FILE);
               const coinIds = JSON.parse(fs.readFileSync(COIN_IDS_FILE, 'utf8'));
               console.log('Ditemukan', coinIds.length, 'koin untuk diproses.');
@@ -54,9 +49,12 @@ jobs:
               for (const coinId of coinIds) {
                 console.log('Mengambil data historis untuk:', coinId);
                 try {
-                  // Menggunakan CoinGecko API v3 dengan API Key
-                  // Format API Key di URL CoinGecko Free Plan biasanya 'x_cg_demo_api_key'
-                  const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=max&x_cg_demo_api_key=${COINGECKO_API_KEY}`);
+                  // MENGUBAH CARA PENGIRIMAN API KEY MENJADI VIA HEADER
+                  const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=max`, {
+                      headers: {
+                          'x-cg-demo-api-key': COINGECKO_API_KEY // API Key dikirim di header
+                      }
+                  });
                   const prices = response.data.prices;
 
                   let ath = 0;
