@@ -40,6 +40,11 @@ jobs:
 
           async function fetchAndProcessHistoricalData() {
             try {
+              // --- BARIS DEBUGGING API KEY (HAPUS SETELAH DIGUNAKAN) ---
+              console.log('Panjang API Key:', COINGECKO_API_KEY ? COINGECKO_API_KEY.length : 'null');
+              console.log('API Key dimulai dengan:', COINGECKO_API_KEY ? COINGECKO_API_KEY.substring(0, 5) + '...' : 'null');
+              // --------------------------------------------------------
+
               console.log('Membaca ID koin dari:', COIN_IDS_FILE);
               const coinIds = JSON.parse(fs.readFileSync(COIN_IDS_FILE, 'utf8'));
               console.log('Ditemukan', coinIds.length, 'koin untuk diproses.');
@@ -117,5 +122,4 @@ jobs:
           r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
           source-dir: upload_data # Sekarang upload hanya dari folder ini
           destination-dir: /
-          # files: historical_summary.json # Baris ini dihapus karena tidak didukung oleh action ini
           output-file-url: true
