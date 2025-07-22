@@ -1,12 +1,11 @@
 [
-  "bitcoin",
-  "ethereum",
-  "tether",
-  "ripple",
-  "binancecoin",
-  "solana",
-  "usd-coin",
-  "dogecoin",
-  "cardano",
-  "tron"
+  "BTCUSDT",
+  "ETHUSDT",
+  "XRPUSDT",
+  "BNBUSDT",
+  "SOLUSDT",
+  "USDCUSDT",
+  "DOGEUSDT",
+  "ADAUSDT",
+  "TRXUSDT"
 ]
