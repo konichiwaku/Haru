@@ -25,6 +25,8 @@ jobs:
           npm install axios
 
       - name: Ambil dan Proses Data Historis
+        env: # Menambahkan API Key ke environment variabel
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
         run: |
           # Tulis kode JavaScript ke sebuah file sementara
           cat << 'EOF' > process_data.js
@@ -32,8 +34,9 @@ jobs:
           const fs = require('fs');
           const path = require('path');
 
-          const COIN_IDS_FILE = 'duit.json'; // Menggunakan nama file 'duit' seperti yang Anda konfirmasi
+          const COIN_IDS_FILE = 'duit.json'; // Pastikan nama file adalah 'duit.json'
           const OUTPUT_FILE = 'historical_summary.json';
+          const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY; // Ambil API Key dari environment variable
 
           async function fetchAndProcessHistoricalData() {
             try {
@@ -46,7 +49,9 @@ jobs:
               for (const coinId of coinIds) {
                 console.log('Mengambil data historis untuk:', coinId);
                 try {
-                  const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=max`);
+                  // Menggunakan CoinGecko API v3 dengan API Key
+                  // Format API Key di URL CoinGecko Free Plan biasanya 'x_cg_demo_api_key'
+                  const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=max&x_cg_demo_api_key=${COINGECKO_API_KEY}`);
                   const prices = response.data.prices;
 
                   let ath = 0;
@@ -76,10 +81,11 @@ jobs:
                     atl_date: atlDate
                   };
 
-                  await new Promise(resolve => setTimeout(resolve, 1500)); // Jeda 1.5 detik (menghindari rate limit CoinGecko)
+                  await new Promise(resolve => setTimeout(resolve, 2000)); // Jeda 2 detik (lebih aman dari rate limit)
 
                 } catch (error) {
                   console.error(`Error saat mengambil data untuk ${coinId}:`, error.message);
+                  // Jangan keluar dari loop, lanjutkan ke koin berikutnya meskipun ada error
                 }
               }
 
@@ -103,7 +109,7 @@ jobs:
           mv historical_summary.json upload_data/ # Pindahkan file ke folder sementara
 
       - name: Unggah historical_summary.json ke Cloudflare R2
-        uses: ryand56/r2-upload-action@v1 # Telah dikoreksi menjadi v1
+        uses: ryand56/r2-upload-action@v1 # Menggunakan versi v1
         with:
           r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
           r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
