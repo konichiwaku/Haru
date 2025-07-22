@@ -22,72 +22,110 @@ jobs:
 
       - name: Instal dependensi
         run: |
-          npm install axios
+          npm install axios crypto # Menambahkan 'crypto' untuk Hashing/Signing
 
-      - name: Ambil dan Proses Data Historis
-        env: # Menambahkan API Key ke environment variabel
-          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+      - name: Ambil dan Proses Data Historis dari Binance
+        env: # Menggunakan BINANCE API Key dan Secret
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_SECRET_KEY: ${{ secrets.BINANCE_SECRET_KEY }}
         run: |
           # Tulis kode JavaScript ke sebuah file sementara
           cat << 'EOF' > process_data.js
           const axios = require('axios');
           const fs = require('fs');
           const path = require('path');
+          const crypto = require('crypto'); // Impor modul crypto
 
-          const COIN_IDS_FILE = 'duit.json'; // Pastikan nama file adalah 'duit.json'
+          const COIN_SYMBOLS_FILE = 'duit.json'; // Sekarang ini adalah file simbol koin
           const OUTPUT_FILE = 'historical_summary.json';
-          const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY; // Ambil API Key dari environment variable
+          const BINANCE_API_KEY = process.env.BINANCE_API_KEY;
+          const BINANCE_SECRET_KEY = process.env.BINANCE_SECRET_KEY; // Secret Key diperlukan untuk signed endpoints, tapi untuk klines public mungkin tidak selalu
 
           async function fetchAndProcessHistoricalData() {
             try {
-              console.log('Membaca ID koin dari:', COIN_IDS_FILE);
-              const coinIds = JSON.parse(fs.readFileSync(COIN_IDS_FILE, 'utf8'));
-              console.log('Ditemukan', coinIds.length, 'koin untuk diproses.');
+              console.log('Membaca simbol koin dari:', COIN_SYMBOLS_FILE);
+              // Pastikan duit.json Anda berisi simbol perdagangan Binance (misal BTCUSDT, ETHUSDT)
+              // Contoh: ["BTCUSDT", "ETHUSDT", "XRPUSDT", "DOGEUSDT"]
+              const coinSymbols = JSON.parse(fs.readFileSync(COIN_SYMBOLS_FILE, 'utf8'));
+              console.log('Ditemukan', coinSymbols.length, 'simbol koin untuk diproses.');
 
               const historicalSummaries = {};
 
-              for (const coinId of coinIds) {
-                console.log('Mengambil data historis untuk:', coinId);
+              for (const symbol of coinSymbols) {
+                console.log('Mengambil data historis untuk:', symbol);
                 try {
-                  // MENGUBAH CARA PENGIRIMAN API KEY MENJADI VIA HEADER
-                  const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=max`, {
+                  // Binance API endpoint untuk data klines (candlestick data)
+                  // interval=1d untuk data harian, limit=1000 untuk 1000 titik data (sekitar 2.7 tahun)
+                  // 'limit=1000' adalah maksimum per request untuk public klines.
+                  // Untuk data lebih lama, perlu looping dengan startTime/endTime
+                  const BINANCE_API_URL = `https://api.binance.com/api/v3/klines`;
+                  const params = {
+                      symbol: symbol,
+                      interval: '1d', // Interval harian
+                      limit: 1000 // Jumlah data point
+                  };
+
+                  // Public endpoints (seperti klines) biasanya tidak memerlukan signature,
+                  // tapi API key tetap disarankan di header untuk rate limiting yang lebih tinggi.
+                  const response = await axios.get(BINANCE_API_URL, {
+                      params: params,
                       headers: {
-                          'x-cg-demo-api-key': COINGECKO_API_KEY // API Key dikirim di header
+                          'X-MBX-APIKEY': BINANCE_API_KEY // API Key untuk identifikasi dan rate limit
                       }
                   });
-                  const prices = response.data.prices;
+
+                  const klines = response.data;
 
                   let ath = 0;
                   let athDate = '';
                   let atl = Number.MAX_VALUE;
                   let atlDate = '';
 
-                  if (prices && prices.length > 0) {
-                    prices.forEach(([timestamp, price]) => {
-                      if (price > ath) {
-                        ath = price;
-                        athDate = new Date(timestamp).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+                  if (klines && klines.length > 0) {
+                    klines.forEach(kline => {
+                      const [
+                        openTime,
+                        openPrice,
+                        highPrice, // Ini adalah harga tertinggi dalam interval
+                        lowPrice,  // Ini adalah harga terendah dalam interval
+                        closePrice,
+                        volume,
+                        closeTime,
+                        quoteAssetVolume,
+                        numberOfTrades,
+                        takerBuyBaseAssetVolume,
+                        takerBuyQuoteAssetVolume,
+                        ignore
+                      ] = kline.map(Number); // Pastikan dikonversi ke Number
+
+                      if (highPrice > ath) {
+                        ath = highPrice;
+                        athDate = new Date(openTime).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
                       }
-                      if (price < atl) {
-                        atl = price;
-                        atlDate = new Date(timestamp).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+                      if (lowPrice < atl) {
+                        atl = lowPrice;
+                        atlDate = new Date(openTime).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
                       }
                     });
                   } else {
-                    console.warn('Tidak ada data harga ditemukan untuk', coinId);
+                    console.warn('Tidak ada data klines ditemukan untuk', symbol);
                   }
 
-                  historicalSummaries[coinId] = {
+                  historicalSummaries[symbol] = {
                     ath: ath,
                     ath_date: athDate,
                     atl: atl,
                     atl_date: atlDate
                   };
 
-                  await new Promise(resolve => setTimeout(resolve, 2000)); // Jeda 2 detik (lebih aman dari rate limit)
+                  await new Promise(resolve => setTimeout(resolve, 500)); // Jeda 0.5 detik (Binance rate limit lebih tinggi)
 
                 } catch (error) {
-                  console.error(`Error saat mengambil data untuk ${coinId}:`, error.message);
+                  console.error(`Error saat mengambil data untuk ${symbol}:`, error.message);
+                  if (error.response) {
+                      console.error('Status:', error.response.status);
+                      console.error('Data:', error.response.data);
+                  }
                   // Jangan keluar dari loop, lanjutkan ke koin berikutnya meskipun ada error
                 }
               }
