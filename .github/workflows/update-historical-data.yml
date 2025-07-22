@@ -32,7 +32,7 @@ jobs:
           const fs = require('fs');
           const path = require('path');
 
-          const COIN_IDS_FILE = 'duit.json'; // Menggunakan nama file 'duit' seperti yang Anda konfirmasi
+          const COIN_IDS_FILE = 'duit'; // Menggunakan nama file 'duit' seperti yang Anda konfirmasi
           const OUTPUT_FILE = 'historical_summary.json';
 
           async function fetchAndProcessHistoricalData() {
@@ -111,4 +111,5 @@ jobs:
           r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
           source-dir: upload_data # Sekarang upload hanya dari folder ini
           destination-dir: /
+          # files: historical_summary.json # Baris ini dihapus karena tidak didukung oleh action ini
           output-file-url: true
