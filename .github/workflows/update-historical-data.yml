@@ -84,7 +84,7 @@ jobs:
                     atl_date: atlDate
                   };
 
-                  await new Promise(resolve => setTimeout(resolve, 6000)); // Jeda 2 detik (lebih aman dari rate limit)
+                  await new Promise(resolve => setTimeout(resolve, 2000)); // Jeda 2 detik (lebih aman dari rate limit)
 
                 } catch (error) {
                   console.error(`Error saat mengambil data untuk ${coinId}:`, error.message);
