@@ -19,11 +19,13 @@ const BASE_URL = "https://api.kucoin.com";
 const SYMBOLS = [
     "SOL-USDT", "BTC-USDT", "ETH-USDT", "XRP-USDT", "ADA-USDT", 
     "DOGE-USDT", "BNB-USDT", "DOT-USDT", "LINK-USDT", "LTC-USDT",
-    "SHIB-USDT", "PEPE-USDT", "TRX-USDT", "AVAX-USDT", "DOT-USDT",
+    "SHIB-USDT", "PEPE-USDT", "TRX-USDT", "AVAX-USDT", 
+    // "DOT-USDT", // DOT-USDT sudah ada di atas, tidak perlu duplikat
     // Tambahkan 200-300 simbol koin Anda di sini, dipisahkan koma dan diapit kutip ganda
     // Contoh: "COINBARU-USDT", "KOINLAIN-USDT"
 ]; 
 const KLINE_INTERVAL = "12hour"; // Interval candle data (misal: "1min", "1hour", "12hour", "1day")
+const MAX_KLINE_DATA_POINTS = 500; // Jumlah maksimum data candle yang diambil. Sesuaikan jika KuCoin punya limit atau Anda butuh lebih/kurang.
 
 // Fungsi untuk jeda (delay) agar tidak kena rate limit API
 const delay = ms => new Promise(res => setTimeout(res, ms));
@@ -32,7 +34,11 @@ async function fetchKlineData(symbol, interval) {
     const endpoint = `/api/v1/market/candles`;
     const params = new URLSearchParams({
         symbol: symbol,
-        type: interval
+        type: interval,
+        // Dari dokumentasi KuCoin, startAt/endAt tidak selalu diperlukan
+        // tetapi jika Anda perlu spesifik rentang waktu, tambahkan di sini.
+        // Untuk data historis yang banyak, KuCoin API mungkin memiliki batasan jumlah data per permintaan.
+        // Anda mungkin perlu melakukan beberapa permintaan jika jumlah data sangat besar.
     });
     const headers = {
         "KC-API-KEY": KUCOIN_API_KEY,
@@ -47,7 +53,8 @@ async function fetchKlineData(symbol, interval) {
             throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
         }
         const data = await response.json();
-        return data.data || []; // Mengembalikan array data kline
+        // Mengembalikan array data kline, pastikan diambil sampai batas MAX_KLINE_DATA_POINTS
+        return data.data ? data.data.slice(-MAX_KLINE_DATA_POINTS) : []; 
     } catch (error) {
         console.error(`Error fetching data for ${symbol}:`, error.message);
         return [];
@@ -55,6 +62,7 @@ async function fetchKlineData(symbol, interval) {
 }
 
 // Fungsi untuk menghitung Drawdown sederhana dari ATH dalam rentang data yang diberikan
+// Ini untuk drawdown saat ini
 function calculateDrawdown(klineData) {
     if (!klineData || klineData.length === 0) return { drawdown: null, ath: null, currentPrice: null };
 
@@ -70,13 +78,50 @@ function calculateDrawdown(klineData) {
 
     if (ath === 0) return { drawdown: null, ath: null, currentPrice: null };
 
-    const drawdown = ((ath - currentPrice) / ath) * 100;
+    const drawdown = ((currentPrice - ath) / ath) * 100; // Perhitungan drawdown: (Current - ATH) / ATH * 100
+    // Drawdown umumnya dihitung dari ATH ke harga saat ini, jadi jika harga lebih rendah, hasilnya negatif.
+    // Jika harga sama atau lebih tinggi dari ATH (yang mustahil untuk ATH terakhir), drawdown = 0.
+    // Kita pastikan hasilnya negatif jika harga turun dari ATH.
+
     return {
         drawdown: parseFloat(drawdown.toFixed(2)),
         ath: parseFloat(ath.toFixed(8)),
         currentPrice: parseFloat(currentPrice.toFixed(8))
     };
 }
+
+// Fungsi BARU untuk menghitung Drawdown historis dari ATH yang bergerak (trailing ATH)
+function calculateHistoricalDrawdown(klineData) {
+    if (!klineData || klineData.length === 0) return [];
+
+    let historicalDrawdown = [];
+    let currentATH = -Infinity; // ATH yang bergerak hingga titik waktu tertentu
+
+    // Loop dari awal data ke akhir
+    for (const candle of klineData) {
+        const time = parseInt(candle[0]); // Timestamp
+        const high = parseFloat(candle[2]); // High price
+        const close = parseFloat(candle[4]); // Close price
+
+        // Perbarui ATH yang bergerak
+        if (high > currentATH) {
+            currentATH = high;
+        }
+
+        // Hitung drawdown pada titik waktu ini
+        let drawdownPercentage = 0;
+        if (currentATH > 0) { // Pastikan ATH bukan 0 untuk menghindari pembagian dengan nol
+            drawdownPercentage = ((close - currentATH) / currentATH) * 100;
+        }
+        
+        historicalDrawdown.push({
+            tanggal: new Date(time * 1000).toISOString(),
+            persentase: parseFloat(drawdownPercentage.toFixed(2))
+        });
+    }
+    return historicalDrawdown;
+}
+
 
 // Fungsi untuk menemukan ATH/ATL dan tanggalnya dalam data yang diberikan
 function findATHATL(klineData) {
@@ -148,8 +193,12 @@ async function main() {
             const klineData = await fetchKlineData(symbol, KLINE_INTERVAL);
 
             if (klineData.length > 0) {
-                const { drawdown, ath: dataRangeAth, currentPrice } = calculateDrawdown(klineData);
+                // Hitung drawdown saat ini (dari ATH dalam rentang data)
+                const { drawdown: currentDrawdownPercent, ath: dataRangeAth, currentPrice } = calculateDrawdown(klineData);
+                // Temukan ATH/ATL keseluruhan dalam data yang diambil
                 const { ath: overallAth, atl: overallAtl, athDate, atlDate } = findATHATL(klineData);
+                // Hitung data drawdown historis untuk chart
+                const historicalDrawdownData = calculateHistoricalDrawdown(klineData);
 
                 const structuredData = {
                     symbol: symbol,
@@ -160,7 +209,7 @@ async function main() {
                     ath_date_in_data_range: athDate,
                     all_time_low_in_data_range: overallAtl,
                     atl_date_in_data_range: atlDate,
-                    drawdown_from_ath_in_data_range_percent: drawdown,
+                    drawdown_from_ath_in_data_range_percent: currentDrawdownPercent,
                     raw_kline_data: klineData.map(candle => ({ 
                         time: new Date(parseInt(candle[0]) * 1000).toISOString(),
                         open: parseFloat(candle[1]),
@@ -169,13 +218,16 @@ async function main() {
                         close: parseFloat(candle[4]),
                         volume: parseFloat(candle[5]),
                         amount: parseFloat(candle[6])
-                    }))
+                    })),
+                    drawdown_data: historicalDrawdownData // <<<--- DATA BARU UNTUK CHART
                 };
 
                 const jsonFileName = `${symbol.replace('-', '_').toLowerCase()}_latest.json`;
                 const jsonContent = JSON.stringify(structuredData, null, 2); 
                 await uploadToR2(jsonContent, jsonFileName, 'application/json');
 
+                // Anda mungkin tidak terlalu membutuhkan HTML ini lagi karena tampilan di WordPress
+                // sudah menggunakan JSON dan Chart.js, tapi saya biarkan di sini.
                 let htmlContent = `<h1>${symbol} Data - ${new Date().toLocaleString()}</h1>`;
                 htmlContent += `<h3>Current Price: ${structuredData.current_price}</h3>`;
                 htmlContent += `<h3>Drawdown (from ATH in data range): ${structuredData.drawdown_from_ath_in_data_range_percent}%</h3>`;
@@ -203,7 +255,7 @@ async function main() {
             console.error(`Terjadi kesalahan umum saat memproses ${symbol}:`, error);
         }
 
-        await delay(1000); // Jeda 1 detik antar setiap panggilan API.
+        await delay(1000); // Jeda 1 detik antar setiap panggilan API. Sesuaikan jika perlu
     }
 }
 
