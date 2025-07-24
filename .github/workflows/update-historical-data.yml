@@ -1,161 +1,96 @@
-name: 1. Update Data Historis Koin (ATH/ATL)
+import os
+import requests
+import pandas as pd
+import boto3
+import json # Import json for saving JSON files
 
-on:
-  schedule:
-    # Jalankan setiap 24 jam sekali (pukul 00:00 UTC)
-    - cron: '0 0 * * *'
-  workflow_dispatch: # Memungkinkan Anda menjalankan workflow secara manual dari GitHub UI
+# --- Konfigurasi KuCoin (gunakan environment variables) ---
+KUCOIN_API_KEY = os.getenv('KUCOIN_API_KEY')
+# KUCOIN_API_SECRET = os.getenv('KUCOIN_API_SECRET') # Uncomment if needed
+# KUCOIN_API_PASSPHRASE = os.getenv('KUCOIN_API_PASSPHRASE') # Uncomment if needed
 
-jobs:
-  fetch-historical:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360 # Timeout maksimal 6 jam (6 jam = 360 menit)
+# --- Konfigurasi Cloudflare R2 (gunakan environment variables) ---
+R2_ACCESS_KEY_ID = os.getenv('R2_ACCESS_KEY_ID')
+R2_SECRET_ACCESS_KEY = os.getenv('R2_SECRET_ACCESS_KEY')
+R2_ACCOUNT_ID = os.getenv('R2_ACCOUNT_ID')
+R2_BUCKET_NAME = 'my-chart-data' # Ganti dengan nama bucket R2 Anda
 
-    steps:
-      - name: Checkout kode
-        uses: actions/checkout@v4
+# --- Konfigurasi Umum ---
+BASE_URL = "https://api.kucoin.com"
+SYMBOLS = ["SOL-USDT", "BTC-USDT", "ETH-USDT"] # Contoh untuk 200+ koin, Anda perlu daftar lengkapnya
+KLINE_INTERVAL = "12hour"
+DAYS_TO_ANALYZE = 7 # Misal, 7 hari data
 
-      - name: Siapkan Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+def fetch_kline_data(symbol, interval, start_time=None, end_time=None):
+    endpoint = f"/api/v1/market/candles"
+    params = {
+        "symbol": symbol,
+        "type": interval,
+        "startAt": start_time,
+        "endAt": end_time
+    }
+    headers = {
+        "KC-API-KEY": KUCOIN_API_KEY,
+        # "KC-API-SECRET": KUCOIN_API_SECRET, # Uncomment if needed
+        # "KC-API-PASSPHRASE": KUCOIN_API_PASSPHRASE # Uncomment if needed
+    }
+    response = requests.get(BASE_URL + endpoint, params=params, headers=headers)
+    response.raise_for_status() # Akan melempar error untuk status HTTP buruk
+    data = response.json().get("data", [])
+    
+    df = pd.DataFrame(data, columns=[
+        "time", "open", "close", "high", "low", "volume", "amount"
+    ])
+    df["time"] = pd.to_datetime(df["time"], unit="s")
+    df = df.astype({"open": float, "close": float, "high": float, "low": float, "volume": float, "amount": float})
+    return df
 
-      - name: Instal dependensi
-        run: |
-          npm install axios crypto # Menambahkan 'crypto' untuk Hashing/Signing
+def upload_to_r2(file_content, file_name, content_type):
+    # Endpoint URL untuk R2 (ganti R2_ACCOUNT_ID dengan ID akun Cloudflare Anda)
+    r2_endpoint_url = f'https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com'
 
-      - name: Ambil dan Proses Data Historis dari Binance
-        env: # Menggunakan BINANCE API Key dan Secret
-          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
-          BINANCE_SECRET_KEY: ${{ secrets.BINANCE_SECRET_KEY }}
-        run: |
-          # Tulis kode JavaScript ke sebuah file sementara
-          cat << 'EOF' > process_data.js
-          const axios = require('axios');
-          const fs = require('fs');
-          const path = require('path');
-          const crypto = require('crypto'); // Impor modul crypto
+    s3 = boto3.client(
+        's3',
+        endpoint_url=r2_endpoint_url,
+        aws_access_key_id=R2_ACCESS_KEY_ID,
+        aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+        region_name='auto' # Atau 'us-east-1' juga bisa
+    )
+    
+    try:
+        s3.put_object(
+            Bucket=R2_BUCKET_NAME,
+            Key=file_name,
+            Body=file_content,
+            ContentType=content_type
+        )
+        print(f"File {file_name} berhasil diunggah ke R2.")
+    except Exception as e:
+        print(f"Gagal mengunggah {file_name} ke R2: {e}")
 
-          const COIN_SYMBOLS_FILE = 'duit.json'; // Sekarang ini adalah file simbol koin
-          const OUTPUT_FILE = 'historical_summary.json';
-          const BINANCE_API_KEY = process.env.BINANCE_API_KEY;
-          const BINANCE_SECRET_KEY = process.env.BINANCE_SECRET_KEY; // Secret Key diperlukan untuk signed endpoints, tapi untuk klines public mungkin tidak selalu
+if __name__ == "__main__":
+    for symbol in SYMBOLS:
+        print(f"Memproses {symbol}...")
+        try:
+            df = fetch_kline_data(symbol, KLINE_INTERVAL)
+            if not df.empty:
+                # Simpan sebagai JSON
+                json_filename = f"{symbol.replace('-', '_').lower()}_latest.json"
+                json_content = df.to_json(orient="records", date_format="iso", indent=4)
+                upload_to_r2(json_content, json_filename, 'application/json')
 
-          async function fetchAndProcessHistoricalData() {
-            try {
-              console.log('Membaca simbol koin dari:', COIN_SYMBOLS_FILE);
-              // Pastikan duit.json Anda berisi simbol perdagangan Binance (misal BTCUSDT, ETHUSDT)
-              // Contoh: ["BTCUSDT", "ETHUSDT", "XRPUSDT", "DOGEUSDT"]
-              const coinSymbols = JSON.parse(fs.readFileSync(COIN_SYMBOLS_FILE, 'utf8'));
-              console.log('Ditemukan', coinSymbols.length, 'simbol koin untuk diproses.');
+                # Simpan sebagai HTML
+                html_filename = f"{symbol.replace('-', '_').lower()}_latest.html"
+                html_content = df.to_html(index=False)
+                upload_to_r2(html_content, html_filename, 'text/html')
+            else:
+                print(f"Tidak ada data ditemukan untuk {symbol}")
 
-              const historicalSummaries = {};
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching data for {symbol}: {e}")
+        except Exception as e:
+            print(f"Terjadi kesalahan saat memproses {symbol}: {e}")
 
-              for (const symbol of coinSymbols) {
-                console.log('Mengambil data historis untuk:', symbol);
-                try {
-                  // Binance API endpoint untuk data klines (candlestick data)
-                  // interval=1d untuk data harian, limit=1000 untuk 1000 titik data (sekitar 2.7 tahun)
-                  // 'limit=1000' adalah maksimum per request untuk public klines.
-                  // Untuk data lebih lama, perlu looping dengan startTime/endTime
-                  const BINANCE_API_URL = `https://api.binance.com/api/v3/klines`;
-                  const params = {
-                      symbol: symbol,
-                      interval: '1d', // Interval harian
-                      limit: 1000 // Jumlah data point
-                  };
-
-                  // Public endpoints (seperti klines) biasanya tidak memerlukan signature,
-                  // tapi API key tetap disarankan di header untuk rate limiting yang lebih tinggi.
-                  const response = await axios.get(BINANCE_API_URL, {
-                      params: params,
-                      headers: {
-                          'X-MBX-APIKEY': BINANCE_API_KEY // API Key untuk identifikasi dan rate limit
-                      }
-                  });
-
-                  const klines = response.data;
-
-                  let ath = 0;
-                  let athDate = '';
-                  let atl = Number.MAX_VALUE;
-                  let atlDate = '';
-
-                  if (klines && klines.length > 0) {
-                    klines.forEach(kline => {
-                      const [
-                        openTime,
-                        openPrice,
-                        highPrice, // Ini adalah harga tertinggi dalam interval
-                        lowPrice,  // Ini adalah harga terendah dalam interval
-                        closePrice,
-                        volume,
-                        closeTime,
-                        quoteAssetVolume,
-                        numberOfTrades,
-                        takerBuyBaseAssetVolume,
-                        takerBuyQuoteAssetVolume,
-                        ignore
-                      ] = kline.map(Number); // Pastikan dikonversi ke Number
-
-                      if (highPrice > ath) {
-                        ath = highPrice;
-                        athDate = new Date(openTime).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
-                      }
-                      if (lowPrice < atl) {
-                        atl = lowPrice;
-                        atlDate = new Date(openTime).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
-                      }
-                    });
-                  } else {
-                    console.warn('Tidak ada data klines ditemukan untuk', symbol);
-                  }
-
-                  historicalSummaries[symbol] = {
-                    ath: ath,
-                    ath_date: athDate,
-                    atl: atl,
-                    atl_date: atlDate
-                  };
-
-                  await new Promise(resolve => setTimeout(resolve, 500)); // Jeda 0.5 detik (Binance rate limit lebih tinggi)
-
-                } catch (error) {
-                  console.error(`Error saat mengambil data untuk ${symbol}:`, error.message);
-                  if (error.response) {
-                      console.error('Status:', error.response.status);
-                      console.error('Data:', error.response.data);
-                  }
-                  // Jangan keluar dari loop, lanjutkan ke koin berikutnya meskipun ada error
-                }
-              }
-
-              fs.writeFileSync(OUTPUT_FILE, JSON.stringify(historicalSummaries, null, 2));
-              console.log('Ringkasan historis disimpan ke', OUTPUT_FILE);
-
-            } catch (error) {
-              console.error('Terjadi error fatal:', error.message);
-              process.exit(1);
-            }
-          }
-
-          fetchAndProcessHistoricalData();
-          EOF
-          # Jalankan file JavaScript dengan Node.js
-          node process_data.js
-
-      - name: Siapkan file untuk diunggah
-        run: |
-          mkdir -p upload_data # Buat folder sementara
-          mv historical_summary.json upload_data/ # Pindahkan file ke folder sementara
-
-      - name: Unggah historical_summary.json ke Cloudflare R2
-        uses: ryand56/r2-upload-action@v1 # Menggunakan versi v1
-        with:
-          r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
-          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
-          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
-          source-dir: upload_data # Sekarang upload hanya dari folder ini
-          destination-dir: /
-          output-file-url: true
+        # Sangat penting: Tambahkan jeda untuk menghindari rate limit API KuCoin
+        import time
+        time.sleep(1) # Jeda 1 detik antar setiap panggilan API. Sesuaikan jika perlu.
