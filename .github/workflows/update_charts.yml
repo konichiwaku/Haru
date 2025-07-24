@@ -3,10 +3,8 @@ name: Update Crypto Charts to R2 (JS) # Nama workflow di GitHub Actions
 on:
   schedule:
     # Jalankan setiap 2 jam. Ini menggunakan waktu UTC.
-    # Jika Anda ingin misalnya pada jam 00:00 WIB, 02:00 WIB, dst:
-    # 00:00 WIB = 17:00 UTC (hari sebelumnya)
-    # Jadi, untuk berjalan setiap 2 jam WIB, gunakan '17 */2 * * *' UTC.
-    # '0 */2 * * *' berarti pada menit ke-0 setiap jam ke-2 UTC (02:00, 04:00, 06:00 UTC dst.)
+    # Untuk waktu WIB (UTC+7), sesuaikan sesuai kebutuhan Anda.
+    # '0 */2 * * *' berarti pada menit ke-0 setiap jam ke-2 UTC.
     - cron: '0 */2 * * *' 
 
   # Izinkan pemicuan manual dari tab Actions di GitHub
