@@ -1,0 +1,46 @@
+name: Update Crypto Charts to R2 (JS) # Nama workflow di GitHub Actions
+
+on:
+  schedule:
+    # Jalankan setiap 2 jam. Ini menggunakan waktu UTC.
+    # Jika Anda ingin misalnya pada jam 00:00 WIB, 02:00 WIB, dst:
+    # 00:00 WIB = 17:00 UTC (hari sebelumnya)
+    # Jadi, untuk berjalan setiap 2 jam WIB, gunakan '17 */2 * * *' UTC.
+    # '0 */2 * * *' berarti pada menit ke-0 setiap jam ke-2 UTC (02:00, 04:00, 06:00 UTC dst.)
+    - cron: '0 */2 * * *' 
+
+  # Izinkan pemicuan manual dari tab Actions di GitHub
+  workflow_dispatch:
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest # Sistem operasi yang akan menjalankan script Anda
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4 # Mengunduh kode dari repositori GitHub Anda
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4 # Menyiapkan lingkungan Node.js
+      with:
+        node-version: '18' # Versi Node.js yang akan digunakan (bisa juga '20')
+
+    - name: Install dependencies
+      # Menginstal library Node.js dari package.json
+      run: npm install
+
+    - name: Run data generation and upload script
+      # Menjalankan script JavaScript utama Anda
+      run: node generate_chart_data.js
+      env:
+        # Mengatur environment variables dari GitHub Secrets Anda.
+        # WAJIB pastikan Anda sudah menambahkan Secrets ini di pengaturan repositori GitHub Anda.
+        KUCOIN_API_KEY: ${{ secrets.KUCOIN_API_KEY }}
+        # KUCOIN_API_SECRET: ${{ secrets.KUCOIN_API_SECRET }} # Aktifkan jika diperlukan
+        # KUCOIN_API_PASSPHRASE: ${{ secrets.KUCOIN_API_PASSPHRASE }} # Aktifkan jika diperlukan
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+
+    - name: Workflow completed
+      run: echo "JavaScript script data generation and upload finished successfully!"
