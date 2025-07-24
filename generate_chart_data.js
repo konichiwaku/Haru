@@ -11,12 +11,18 @@ const KUCOIN_API_KEY = process.env.KUCOIN_API_KEY;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
-const R2_BUCKET_NAME = 'NAMA-BUCKET-R2-ANDA-DI-SINI'; // <<<--- WAJIB GANTI INI DENGAN NAMA BUCKET R2 ANDA
+const R2_BUCKET_NAME = 'aprice'; // <<<--- SUDAH DIGANTI KE 'aprice' SESUAI PERMINTAAN ANDA
 
 // --- Konfigurasi Umum ---
 const BASE_URL = "https://api.kucoin.com";
 // <<<--- WAJIB GANTI INI DENGAN DAFTAR LENGKAP 200/300 SIMBOL KOIN ANDA --->>>
-const SYMBOLS = ["SOL-USDT", "BTC-USDT", "ETH-USDT", "XRP-USDT", "ADA-USDT", "DOGE-USDT", "BNB-USDT", "DOT-USDT", "LINK-USDT", "LTC-USDT"]; 
+const SYMBOLS = [
+    "SOL-USDT", "BTC-USDT", "ETH-USDT", "XRP-USDT", "ADA-USDT", 
+    "DOGE-USDT", "BNB-USDT", "DOT-USDT", "LINK-USDT", "LTC-USDT",
+    "SHIB-USDT", "PEPE-USDT", "TRX-USDT", "AVAX-USDT", "DOT-USDT",
+    // Tambahkan 200-300 simbol koin Anda di sini, dipisahkan koma dan diapit kutip ganda
+    // Contoh: "COINBARU-USDT", "KOINLAIN-USDT"
+]; 
 const KLINE_INTERVAL = "12hour"; // Interval candle data (misal: "1min", "1hour", "12hour", "1day")
 
 // Fungsi untuk jeda (delay) agar tidak kena rate limit API
@@ -107,7 +113,7 @@ async function uploadToR2(fileContent, fileName, contentType) {
 
     const s3Client = new S3Client({
         endpoint: r2EndpointUrl,
-        region: 'auto', // Cloudflare R2 adalah global, 'auto' atau 'us-east-1' bisa digunakan
+        region: 'auto', 
         credentials: {
             accessKeyId: R2_ACCESS_KEY_ID,
             secretAccessKey: R2_SECRET_ACCESS_KEY,
@@ -121,7 +127,7 @@ async function uploadToR2(fileContent, fileName, contentType) {
             Key: fileName,
             Body: fileContent,
             ContentType: contentType,
-            ACL: 'public-read' // Penting: Agar file bisa diakses publik melalui URL R2
+            ACL: 'public-read' 
         }
     });
 
@@ -130,7 +136,7 @@ async function uploadToR2(fileContent, fileName, contentType) {
         console.log(`File ${fileName} berhasil diunggah ke R2.`);
     } catch (e) {
         console.error(`Gagal mengunggah ${fileName} ke R2:`, e);
-        throw e; // Lemparkan error agar job GitHub Actions gagal jika upload gagal
+        throw e; 
     }
 }
 
@@ -142,11 +148,9 @@ async function main() {
             const klineData = await fetchKlineData(symbol, KLINE_INTERVAL);
 
             if (klineData.length > 0) {
-                // Hitung drawdown dan dapatkan ATH/ATL
                 const { drawdown, ath: dataRangeAth, currentPrice } = calculateDrawdown(klineData);
                 const { ath: overallAth, atl: overallAtl, athDate, atlDate } = findATHATL(klineData);
 
-                // Strukturkan data untuk JSON output
                 const structuredData = {
                     symbol: symbol,
                     interval: KLINE_INTERVAL,
@@ -157,7 +161,7 @@ async function main() {
                     all_time_low_in_data_range: overallAtl,
                     atl_date_in_data_range: atlDate,
                     drawdown_from_ath_in_data_range_percent: drawdown,
-                    raw_kline_data: klineData.map(candle => ({ // Konversi array kline menjadi array objek
+                    raw_kline_data: klineData.map(candle => ({ 
                         time: new Date(parseInt(candle[0]) * 1000).toISOString(),
                         open: parseFloat(candle[1]),
                         high: parseFloat(candle[2]),
@@ -168,12 +172,10 @@ async function main() {
                     }))
                 };
 
-                // Unggah file JSON ke R2
                 const jsonFileName = `${symbol.replace('-', '_').toLowerCase()}_latest.json`;
-                const jsonContent = JSON.stringify(structuredData, null, 2); // Format JSON agar mudah dibaca
+                const jsonContent = JSON.stringify(structuredData, null, 2); 
                 await uploadToR2(jsonContent, jsonFileName, 'application/json');
 
-                // Unggah file HTML ke R2 (Contoh tabel HTML sederhana)
                 let htmlContent = `<h1>${symbol} Data - ${new Date().toLocaleString()}</h1>`;
                 htmlContent += `<h3>Current Price: ${structuredData.current_price}</h3>`;
                 htmlContent += `<h3>Drawdown (from ATH in data range): ${structuredData.drawdown_from_ath_in_data_range_percent}%</h3>`;
@@ -201,8 +203,7 @@ async function main() {
             console.error(`Terjadi kesalahan umum saat memproses ${symbol}:`, error);
         }
 
-        // Sangat penting: Tambahkan jeda untuk menghindari rate limit API KuCoin
-        await delay(1000); // Jeda 1 detik (1000 milidetik) antar setiap panggilan API.
+        await delay(1000); // Jeda 1 detik antar setiap panggilan API.
     }
 }
 
