@@ -1,12 +1,12 @@
 {
-  "name": "kucoin-chart-data-generator",
+  "name": "kucoin-data-generator",
   "version": "1.0.0",
-  "description": "Generates KuCoin chart data and uploads to R2",
-  "main": "generate_chart_data.js",
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.0.0",
-    "@aws-sdk/lib-storage": "^3.0.0",
-    "node-fetch": "^3.0.0"
+  "description": "Script to fetch KuCoin data for multiple coins and generate JSON for R2",
+  "main": "generate_data.js",
+  "scripts": {
+    "start": "node generate_data.js"
   },
-  "type": "module"
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  }
 }
