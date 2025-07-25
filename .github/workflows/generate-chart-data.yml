@@ -4,7 +4,9 @@ name: Generate and Upload Multi-Coin Chart Data to R2
 on:
   workflow_dispatch: # Memungkinkan Anda menjalankan workflow secara manual dari GitHub UI
   schedule:
-    - cron: '*/24 * * * *' # Jalankan setiap 24 menit (UTC)
+    # Jalankan setiap 24 menit (UTC)
+    # Sesuaikan jika Anda merasa butuh lebih sering atau jarang, perhatikan rate limit API KuCoin
+    - cron: '*/24 * * * *'
 
 jobs:
   build-and-upload:
@@ -17,11 +19,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20' # Menggunakan Node.js versi 20
-          cache: 'npm' # Mengaktifkan caching untuk npm dependencies
-          # Karena kita tidak punya package-lock.json saat ini, kita bisa HAPUS cache-dependency-path UNTUK EKSEKUSI PERTAMA
-          # Atau, jika Anda yakin package-lock.json akan tergenerate oleh npm install, biarkan.
-          # Untuk pertama kali dan memastikan tidak error, mari kita coba HILANGKAN path-nya dulu.
-          # cache-dependency-path: package-lock.json # <-- HILANGKAN BARIS INI UNTUK EKSEKUSI PERTAMA
+          # cache: 'npm' # KOMEN BARIS INI DULU UNTUK EKSEKUSI PERTAMA
+          # cache-dependency-path: package-lock.json # KOMEN BARIS INI DULU UNTUK EKSEKUSI PERTAMA
 
       - name: Install dependencies (will generate package-lock.json)
         run: npm install # Gunakan 'npm install' agar package-lock.json tergenerate
@@ -31,7 +30,7 @@ jobs:
 
       - name: Check if chart_data.json was created
         run: |
-          ls -l chart_data.json
+          ls -l chart_data.json # Tampilkan detail file untuk debugging
           if [ ! -f chart_data.json ]; then
             echo "Error: chart_data.json was not created!"
             exit 1
@@ -42,11 +41,12 @@ jobs:
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip awscliv2.zip
           sudo ./aws/install
-          aws --version
+          aws --version # Verifikasi instalasi
 
       - name: Upload data to Cloudflare R2
         run: |
-          # GANTI 'data-chart-koin' dengan NAMA BUCKET R2 Anda
+          # Perintah 'cp' akan membuat file public secara default jika bucket memiliki kebijakan publik.
+          # '--acl public-read' ditambahkan untuk eksplisit.
           aws s3 cp chart_data.json s3://${{ env.R2_BUCKET_NAME }}/chart_data.json \
             --endpoint-url ${{ env.AWS_ENDPOINT_URL }} \
             --region auto \
@@ -55,4 +55,4 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_ENDPOINT_URL: https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com
-          R2_BUCKET_NAME: data-chart-koin # <<--- GANTI DENGAN NAMA BUCKET R2 ANDA
+          R2_BUCKET_NAME: data-chart-koin # <<--- GANTI DENGAN NAMA BUCKET R2 ANDA!
