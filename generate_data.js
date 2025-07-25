@@ -41,7 +41,7 @@ async function fetchCandles(symbol, type = '1day', days = 365) {
   if (!res.ok) throw new Error(`Gagal mengambil data lilin untuk ${symbol}: ${res.statusText}`);
   const data = await res.json();
   if (data.code !== '200000') throw new Error(`KuCoin API Error (candles for ${symbol}): ${data.msg}`);
-  
+
   // Data lilin: [timestamp, open, close, high, low, volume, amount]
   // Kita perlu timestamp dan close price
   return data.data.map(candle => ({
@@ -64,11 +64,10 @@ async function fetchTicker(symbol) {
 async function main() {
   console.log('Memulai pengambilan data dari KuCoin...');
   const allChartData = {};
-  const coinLimit = 250; // Anda bisa mengubah atau menghapus batasan ini jika perlu
+  const coinLimit = 250; 
 
   try {
     const symbols = await fetchSymbols();
-    // Filter pasangan USDT dan batasi jumlah koin
     const usdtPairs = symbols.filter(s => s.quoteCurrency === 'USDT' && s.enableTrading).slice(0, coinLimit);
 
     if (usdtPairs.length === 0) {
@@ -78,15 +77,15 @@ async function main() {
 
     let processedCount = 0;
     for (const pair of usdtPairs) {
-      const symbol = pair.symbol; // Contoh: BTC-USDT
-      const baseCurrency = pair.baseCurrency; // Contoh: BTC
-      
-      console.log(`[${++processedCount}/${usdtPairs.length}] Mengambil data untuk ${symbol}...`);
-      
-      try {
-        await sleep(200); // Jeda 200ms untuk mematuhi rate limit KuCoin (5 request/detik)
+      const symbol = pair.symbol; 
+      const baseCurrency = pair.baseCurrency; 
 
-        const historicalCandles = await fetchCandles(symbol, '1day', 365); // Ambil 1 tahun data untuk ATH
+      console.log(`[${++processedCount}/${usdtPairs.length}] Mengambil data untuk ${symbol}...`);
+
+      try {
+        await sleep(200); 
+
+        const historicalCandles = await fetchCandles(symbol, '1day', 365); 
         const currentPrice = await fetchTicker(symbol);
 
         if (historicalCandles.length === 0) {
@@ -94,7 +93,6 @@ async function main() {
           continue;
         }
 
-        // Hitung ATH dari data historis
         let ath = 0;
         let athDate = null;
         for (const candle of historicalCandles) {
@@ -113,13 +111,12 @@ async function main() {
         const daysSinceATH = hitungHariSejak(athDateObj);
         const drawdownNow = ((currentPrice - ath) / ath) * 100;
 
-        // Ambil hanya 7 hari terakhir untuk grafik
         const recentHistorical = historicalCandles.slice(-7).map(candle => ({
             date: formatTanggalPendek(new Date(candle.timestamp)),
             drawdown: ((candle.price - ath) / ath * 100).toFixed(2)
         }));
 
-        allChartData[baseCurrency] = { // Gunakan nama koin sebagai kunci (misal: "BTC")
+        allChartData[baseCurrency] = {
           symbol: symbol,
           ath: ath,
           athDate: athDate,
@@ -132,11 +129,9 @@ async function main() {
 
       } catch (coinError) {
         console.error(`[ERROR] Gagal memproses ${symbol}: ${coinError.message}`);
-        // Lanjutkan ke koin berikutnya
       }
     }
 
-    // Simpan semua data ke satu file JSON
     fs.writeFileSync('chart_data.json', JSON.stringify(allChartData, null, 2));
     console.log(`\nData chart untuk ${Object.keys(allChartData).length} koin berhasil disimpan ke chart_data.json`);
     console.log('Ukuran file yang dihasilkan:', (fs.statSync('chart_data.json').size / (1024 * 1024)).toFixed(2), 'MB');
