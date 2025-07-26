@@ -43,32 +43,49 @@ def get_days_difference(date_iso_str, reference_dt_obj=None):
         return 'N/A'
     
     try:
+        # Menangani format ISO 8601 dengan atau tanpa 'Z' dan memastikan timezone-aware
         dt1 = datetime.fromisoformat(date_iso_str.replace("Z", "+00:00"))
-    except ValueError: # Fallback for less strict ISO formats
-        try:
-            dt1 = datetime.strptime(date_iso_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-        except ValueError:
-            print(f"Warning: Could not parse date string {date_iso_str}. Returning N/A.")
-            return 'N/A'
+        if dt1.tzinfo is None: # Jika tidak ada info timezone, asumsikan UTC
+            dt1 = dt1.replace(tzinfo=timezone.utc)
+    except ValueError:
+        print(f"Warning: Could not parse date string {date_iso_str}. Returning N/A for days difference.")
+        return 'N/A'
 
     if reference_dt_obj is None:
         dt2 = datetime.now(timezone.utc)
     else:
         dt2 = reference_dt_obj
 
-    diff_seconds = abs((dt2 - dt1).total_seconds())
-    diff_days = round(diff_seconds / (60 * 60 * 24))
+    # Pastikan kedua datetime objek timezone-aware sebelum melakukan operasi
+    if dt1.tzinfo is None: dt1 = dt1.replace(tzinfo=timezone.utc)
+    if dt2.tzinfo is None: dt2 = dt2.replace(tzinfo=timezone.utc)
+
+    # Menggunakan floor division untuk memastikan hasil hari tidak terlalu sensitif terhadap jam/menit
+    # dan mengambil nilai absolut untuk selisih.
+    diff_days = abs((dt2 - dt1).days) # Mengambil selisih hari secara langsung
     return diff_days
 
 def format_date_for_display(timestamp_ms):
-    """Mengonversi timestamp milidetik ke objek datetime lokal dan format untuk tampilan."""
-    dt_object = datetime.fromtimestamp(timestamp_ms / 1000)
-    return dt_object.strftime("%d %B %Y")
+    """Mengonversi timestamp milidetik ke objek datetime lokal (WIB) dan format untuk tampilan."""
+    # Konversi timestamp milidetik ke objek datetime UTC
+    dt_object_utc = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+    
+    # Konversi ke WIB (UTC+7)
+    wib_timezone = timezone(timedelta(hours=7))
+    dt_object_wib = dt_object_utc.astimezone(wib_timezone)
+
+    return dt_object_wib.strftime("%d %B %Y")
 
 def format_date_for_xaxis(timestamp_ms):
-    """Mengonversi timestamp milidetik ke objek datetime lokal dan format untuk sumbu X."""
-    dt_object = datetime.fromtimestamp(timestamp_ms / 1000)
-    return dt_object.strftime("%d %b")
+    """Mengonversi timestamp milidetik ke objek datetime lokal (WIB) dan format untuk sumbu X."""
+    # Konversi timestamp milidetik ke objek datetime UTC
+    dt_object_utc = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+
+    # Konversi ke WIB (UTC+7)
+    wib_timezone = timezone(timedelta(hours=7))
+    dt_object_wib = dt_object_utc.astimezone(wib_timezone)
+    
+    return dt_object_wib.strftime("%d %b")
 
 # --- Pengambilan Data dari KuCoin ---
 def fetch_kucoin_ticker_price(symbol):
@@ -106,6 +123,9 @@ def fetch_kucoin_kline_data(symbol, days_for_ath_atl=730, days_for_chart=7):
 
     long_term_klines = []
     try:
+        # Loop untuk mengambil data kline dalam batch jika `days_for_ath_atl` sangat besar
+        # KuCoin kline API bisa jadi punya batasan jumlah kline per request.
+        # Untuk 2 tahun (730 hari), satu request mungkin sudah cukup.
         response_long_term = requests.get(
             KUCOIN_KLINE_API,
             params={"symbol": symbol, "type": "1day", "from": start_time_long_s, "to": end_time_long_s},
@@ -115,9 +135,9 @@ def fetch_kucoin_kline_data(symbol, days_for_ath_atl=730, days_for_chart=7):
         long_term_data = response_long_term.json()
 
         if long_term_data["code"] == "200000" and long_term_data["data"]:
-            # Data from KuCoin is typically oldest to newest.
-            # We iterate in reverse to prefer more recent ATH/ATL if values are duplicated.
-            for kline in reversed(long_term_data["data"]):
+            # Data dari KuCoin biasanya dari terlama ke terbaru.
+            # ATH/ATL harus diambil dari keseluruhan data yang tersedia.
+            for kline in long_term_data["data"]:
                 timestamp_ms = int(kline[0]) * 1000
                 high_price = float(kline[2])
                 low_price = float(kline[3])
@@ -128,23 +148,21 @@ def fetch_kucoin_kline_data(symbol, days_for_ath_atl=730, days_for_chart=7):
                 })
             
             if long_term_klines:
-                # Initialize with prices from the most recent kline entry
+                # Inisialisasi ATH/ATL dengan nilai pertama
                 ath_val = long_term_klines[0]['high']
                 atl_val = long_term_klines[0]['low']
                 ath_date_iso_str = datetime.fromtimestamp(long_term_klines[0]['timestamp_ms'] / 1000, tz=timezone.utc).isoformat()
                 atl_date_iso_str = ath_date_iso_str 
 
-                # Iterate through reversed klines (newest to oldest) to find the actual ATH/ATL
+                # Cari ATH dan ATL yang sebenarnya
                 for kline_entry in long_term_klines:
                     kline_timestamp = kline_entry['timestamp_ms']
                     kline_datetime_iso = datetime.fromtimestamp(kline_timestamp / 1000, tz=timezone.utc).isoformat()
                     
-                    # For ATH, always take the highest. If equal, the newer one will be picked first due to reversed iteration.
                     if kline_entry['high'] > ath_val:
                         ath_val = kline_entry['high']
                         ath_date_iso_str = kline_datetime_iso
                     
-                    # For ATL, always take the lowest. If equal, the newer one will be picked first due to reversed iteration.
                     if kline_entry['low'] < atl_val:
                         atl_val = kline_entry['low']
                         atl_date_iso_str = kline_datetime_iso
@@ -180,7 +198,7 @@ def fetch_kucoin_kline_data(symbol, days_for_ath_atl=730, days_for_chart=7):
         if chart_data["code"] == "200000" and chart_data["data"]:
             for kline in chart_data["data"]:
                 timestamp_ms = int(kline[0]) * 1000
-                price = float(kline[1]) # Using 'open' price for simplicity for chart points
+                price = float(kline[1]) # Menggunakan harga 'open' untuk kesederhanaan titik chart
                 klines_data_for_chart.append({"timestamp": timestamp_ms, "price": price})
         else:
             print(f"Error fetching chart kline data for {symbol}: {chart_data.get('msg', 'Unknown error')}")
@@ -223,6 +241,7 @@ async def main():
     for coin_name, kucoin_symbol in COIN_CONFIGS.items():
         print(f"\n--- Processing {coin_name} ({kucoin_symbol}) ---")
 
+        # Mengambil data ATH/ATL dan historis
         ath_value, ath_date_iso_str, atl_value, atl_date_iso_str, historical_prices = \
             fetch_kucoin_kline_data(kucoin_symbol, days_for_ath_atl=730)
 
@@ -239,10 +258,12 @@ async def main():
         print(f"ATH: ${ath_value:.4f} on {ath_date_iso_str}")
         print(f"ATL: ${atl_value:.4f} on {atl_date_iso_str}")
 
+        # Hitung days_since_ath menggunakan tanggal ATH yang sudah didapatkan
         days_since_ath = get_days_difference(ath_date_iso_str)
-
+        
         # Tambahkan harga saat ini ke data historis untuk grafik yang lebih real-time
-        historical_prices.append({"timestamp": int(datetime.now(timezone.utc).timestamp() * 1000), "price": current_price})
+        current_timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        historical_prices.append({"timestamp": current_timestamp_ms, "price": current_price})
         historical_prices.sort(key=lambda x: x["timestamp"]) # Pastikan urutan kronologis
 
         formatted_historical_data = []
@@ -264,16 +285,15 @@ async def main():
             },
             "currentPrice": current_price,
             "historicalPrices": formatted_historical_data,
-            "lastUpdated": datetime.now(timezone.utc).isoformat()
+            "lastUpdated": datetime.now(timezone.utc).isoformat() # ISO 8601 format with Z for UTC
         }
 
         json_output = json.dumps(output_data, indent=4)
         print(f"Generated JSON data for {coin_name}:")
 
         # Ini adalah lokasi file di R2 Anda. Pastikan ini sesuai dengan yang diambil di frontend.
-        # Jika Anda ingin menyimpan langsung di root bucket: r2_file_key = f"{coin_name.lower().replace(' ', '_')}_drawdown_data.json"
-        # Jika Anda ingin menyimpan di folder 'aprice': r2_file_key = f"aprice/{coin_name.lower().replace(' ', '_')}_drawdown_data.json"
-        r2_file_key = f"aprice/{coin_name.lower().replace(' ', '_')}_drawdown_data.json" # Mempertahankan prefiks 'aprice/' sesuai URL frontend
+        # HANYA SATU PREFIKS 'aprice/'
+        r2_file_key = f"aprice/{coin_name.lower().replace(' ', '_')}_drawdown_data.json"
 
         try:
             upload_to_r2(json_output, R2_BUCKET_NAME, r2_file_key)
