@@ -10,6 +10,8 @@ KUCOIN_TICKER_API = "https://api.kucoin.com/api/v1/market/orderbook/level1"
 KUCOIN_KLINE_API = "https://api.kucoin.com/api/v1/market/candles"
 
 # --- DAFTAR KOIN YANG AKAN DIPROSES ---
+# Format: {"Nama Koin Tampilan": "SYMBOL-USDT di KuCoin", ...}
+# Pastikan simbol KuCoin sudah benar. Anda bisa memeriksa di pasar KuCoin.
 COIN_CONFIGS = {
     "Arbitrum": "ARB-USDT",
     "Bitcoin": "BTC-USDT",
@@ -21,9 +23,10 @@ COIN_CONFIGS = {
 }
 
 # --- Konfigurasi Cloudflare R2 ---
+# Pastikan ini disetel sebagai GitHub Secrets
 R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
-R2_ENDPOINT_URL = os.environ.get("R2_ENDPOINT_URL")
+R2_ENDPOINT_URL = os.environ.get("R2_ENDPOINT_URL") # Contoh: https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME")
 
 # --- Fungsi Pembantu Tanggal ---
@@ -40,7 +43,6 @@ def get_days_difference(date_iso_str, reference_dt_obj=None):
         return 'N/A'
     
     try:
-        # datetime.fromisoformat support for Z and +00:00
         dt1 = datetime.fromisoformat(date_iso_str.replace("Z", "+00:00"))
     except ValueError: # Fallback for less strict ISO formats
         try:
@@ -114,13 +116,11 @@ def fetch_kucoin_kline_data(symbol, days_for_ath_atl=730, days_for_chart=7):
 
         if long_term_data["code"] == "200000" and long_term_data["data"]:
             # Data from KuCoin is typically oldest to newest.
-            # We convert to (price, timestamp_ms) tuples for easier processing
-            # And iterate in reverse to prefer more recent ATH/ATL if values are duplicated.
+            # We iterate in reverse to prefer more recent ATH/ATL if values are duplicated.
             for kline in reversed(long_term_data["data"]):
                 timestamp_ms = int(kline[0]) * 1000
                 high_price = float(kline[2])
                 low_price = float(kline[3])
-                # Store (price, timestamp_ms, 'high'/'low') to distinguish between high/low for date lookup
                 long_term_klines.append({
                     "timestamp_ms": timestamp_ms, 
                     "high": high_price, 
@@ -128,28 +128,28 @@ def fetch_kucoin_kline_data(symbol, days_for_ath_atl=730, days_for_chart=7):
                 })
             
             if long_term_klines:
-                # Initialize with first valid prices
+                # Initialize with prices from the most recent kline entry
                 ath_val = long_term_klines[0]['high']
                 atl_val = long_term_klines[0]['low']
                 ath_date_iso_str = datetime.fromtimestamp(long_term_klines[0]['timestamp_ms'] / 1000, tz=timezone.utc).isoformat()
-                atl_date_iso_str = ath_date_iso_str # Initialize ATL date to same as ATH, will be updated
+                atl_date_iso_str = ath_date_iso_str 
 
-                # Iterate through reversed klines (newest to oldest) to find the most recent ATH/ATL
+                # Iterate through reversed klines (newest to oldest) to find the actual ATH/ATL
                 for kline_entry in long_term_klines:
                     kline_timestamp = kline_entry['timestamp_ms']
                     kline_datetime_iso = datetime.fromtimestamp(kline_timestamp / 1000, tz=timezone.utc).isoformat()
                     
+                    # For ATH, always take the highest. If equal, the newer one will be picked first due to reversed iteration.
                     if kline_entry['high'] > ath_val:
                         ath_val = kline_entry['high']
                         ath_date_iso_str = kline_datetime_iso
-                    # We want the *lowest* ATL, but if duplicate, the most recent one.
-                    # This logic handles it by simply updating if a lower or equal value is found (because we are iterating newest to oldest)
+                    
+                    # For ATL, always take the lowest. If equal, the newer one will be picked first due to reversed iteration.
                     if kline_entry['low'] < atl_val:
                         atl_val = kline_entry['low']
                         atl_date_iso_str = kline_datetime_iso
             else:
                 print(f"No valid prices for ATH/ATL for {symbol} within fetched history.")
-                # Fallback to current time if no historical data at all
                 current_utc_iso = datetime.now(timezone.utc).isoformat()
                 ath_val, ath_date_iso_str, atl_val, atl_date_iso_str = 0.0, current_utc_iso, 0.0, current_utc_iso
 
@@ -269,10 +269,12 @@ async def main():
 
         json_output = json.dumps(output_data, indent=4)
         print(f"Generated JSON data for {coin_name}:")
-        # print(json_output)
 
-        r2_file_key = f"aprice/{coin_name.lower().replace(' ', '_')}_drawdown_data.json" # Tambahkan prefiks 'aprice/'
-        
+        # Ini adalah lokasi file di R2 Anda. Pastikan ini sesuai dengan yang diambil di frontend.
+        # Jika Anda ingin menyimpan langsung di root bucket: r2_file_key = f"{coin_name.lower().replace(' ', '_')}_drawdown_data.json"
+        # Jika Anda ingin menyimpan di folder 'aprice': r2_file_key = f"aprice/{coin_name.lower().replace(' ', '_')}_drawdown_data.json"
+        r2_file_key = f"aprice/{coin_name.lower().replace(' ', '_')}_drawdown_data.json" # Mempertahankan prefiks 'aprice/' sesuai URL frontend
+
         try:
             upload_to_r2(json_output, R2_BUCKET_NAME, r2_file_key)
         except Exception as e:
