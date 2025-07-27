@@ -13,7 +13,7 @@ R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_PUBLIC_URL_BASE = f"https://pub-{R2_ACCOUNT_ID}.r2.dev/{R2_BUCKET_NAME}" # Ganti jika Anda pakai custom domain
 
 # File di R2 yang menyimpan data ATH global untuk semua koin
-ALL_COINS_ATH_FILE = "aprice/all_coins_ath.json"
+ALL_COINS_ATH_FILE = "all_coins_ath.json"
 
 # --- Fungsi Utility Cloudflare R2 ---
 def get_r2_client():
