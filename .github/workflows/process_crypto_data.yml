@@ -1,0 +1,30 @@
+name: Process Crypto Drawdown Data
+
+on:
+  schedule:
+    - cron: '0 */2 * * *' # Menjalankan setiap 2 jam (pada menit ke-0)
+  workflow_dispatch: # Memungkinkan trigger manual dari GitHub UI
+
+jobs:
+  process_data:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9' # Anda bisa pakai versi Python lain yang kompatibel
+
+    - name: Install dependencies
+      run: pip install -r scripts/requirements.txt
+
+    - name: Run data processing script
+      env:
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        R2_BUCKET_NAME: your-bucket-name # Ganti dengan nama bucket R2 Anda
+      run: python scripts/main.py
