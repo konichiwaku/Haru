@@ -16,7 +16,7 @@ R2_PUBLIC_URL_BASE = f"https://pub-{R2_ACCOUNT_ID}.r2.dev/{R2_BUCKET_NAME}"
 
 # File di R2 yang menyimpan data ATH/ATL global untuk semua koin
 # Pastikan path ini sesuai dengan lokasi 'all_coins_ath.json' di bucket R2 Anda
-ALL_COINS_ATH_FILE = "aprice/all_coins_ath.json" # Perbaikan path dari pembahasan sebelumnya
+ALL_COINS_ATH_FILE = "all_coins_ath.json" # Perbaikan path dari pembahasan sebelumnya
 
 # --- Fungsi Utility Cloudflare R2 ---
 def get_r2_client():
